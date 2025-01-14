@@ -6,13 +6,13 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import HomePage from './pages/HomePage';
 import Navbar from './components/Navbar';
-import CodeGenerationPage from './pages/CodeGenerationPage';
-import AppGenerationPage from './pages/AppGenerationPage';
 import { AuthProvider } from './context/AuthContext';
 import BiddingPage from './pages/BiddingPage';
 import AssignmentDetails from './pages/AssignmentDetailsPage';
 import AssignmentListPage from './pages/AssignmentListPage';
 import ChatPage from './pages/ChatPage';
+import CreateAssignmentPage from './pages/CreateAssignmentPage';
+
 const theme = createTheme({
   typography: {
     h4: {
@@ -34,10 +34,9 @@ function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
                 <Route path="/" element={<HomePage />} />
-                <Route path="/generate" element={<CodeGenerationPage />} />
-                <Route path="/generate-app" element={<AppGenerationPage />} />
                 <Route path="/bidding" element={<BiddingPage />} />
                 <Route path="/assignments" element={<AssignmentListPage />} />
+                <Route path="/assignments/create" element={<CreateAssignmentPage />} />
                 <Route path="/assignments/:id" element={<AssignmentDetails />} />
                 <Route path="/assignments/:id/chat" element={<ChatPage />} />
               </Routes>
@@ -50,7 +49,3 @@ function App() {
 }
 
 export default App;
-
-
-
-

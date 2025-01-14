@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Container, 
-  Typography,
+  Typography, 
+  Box,
   Paper,
   Grid,
-  Box,
   Chip,
   Button,
   Divider,
@@ -20,6 +20,10 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Stepper,
+  Step,
+  StepLabel,
+  Link
 } from '@mui/material';
 import {
   AccessTime,
@@ -30,22 +34,32 @@ import {
   Error,
   History,
   PendingActions,
-  Warning
+  Warning,
+  GitHub,
+  PlayArrow
 } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
+import axios from 'axios';
+
+const GENERATION_STEPS = [
+  'Analyzing Requirements',
+  'Generating Plan',
+  'Creating Project',
+  'Reviewing',
+  'Final Verification',
+  'Pushing to GitHub'
+];
 
 export default function AssignmentDetails() {
   const [assignment, setAssignment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
+  const [generationProgress, setGenerationProgress] = useState(null);
+  const [activeStep, setActiveStep] = useState(0);
   const { id } = useParams();
   const navigate = useNavigate();
   const BASE_URL = import.meta.env.VITE_BASE_URL;
-
-  useEffect(() => {
-    fetchAssignmentDetails();
-  }, [id]);
 
   const fetchAssignmentDetails = async () => {
     try {
@@ -69,6 +83,103 @@ export default function AssignmentDetails() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAssignmentDetails();
+  }, [id]);
+
+  // WebSocket connection for generation progress
+  useEffect(() => {
+    let ws;
+
+    const connectWebSocket = () => {
+      // Close existing connection if any
+      if (ws) {
+        ws.close();
+      }
+
+      console.log('Connecting to WebSocket...');
+      ws = new WebSocket(
+        `${BASE_URL.replace('http', 'ws')}/ws/assignments/${id}/generation/`
+      );
+
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log('WebSocket message:', data);
+        
+        // Update progress state
+        setGenerationProgress(data);
+        
+        // Update stepper based on status
+        switch (data.status) {
+          case 'analyzing':
+            setActiveStep(0);
+            break;
+          case 'planning':
+            setActiveStep(1);
+            break;
+          case 'generating':
+            setActiveStep(2);
+            break;
+          case 'reviewing':
+            setActiveStep(3);
+            break;
+          case 'final_review':
+            setActiveStep(4);
+            break;
+          case 'completed':
+            setActiveStep(5);
+            fetchAssignmentDetails(); // Refresh assignment details
+            break;
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setError('Error connecting to real-time updates');
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket connection closed');
+      };
+    };
+
+    // Connect if assignment is being generated
+    if (assignment?.generation_status === 'in_progress') {
+      connectWebSocket();
+    }
+
+    return () => {
+      if (ws) {
+        console.log('Cleaning up WebSocket connection');
+        ws.close();
+      }
+    };
+  }, [assignment?.generation_status, id]);
+
+  const handleStartGeneration = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `${BASE_URL}/api/agents/assignments/${id}/process/`,
+        {},
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      // Refresh assignment details to get updated generation status
+      fetchAssignmentDetails();
+    } catch (error) {
+      setError('Failed to start generation process');
     }
   };
 
@@ -116,8 +227,8 @@ export default function AssignmentDetails() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
-      {/* Header Section */}
       <Paper sx={{ p: 3, mb: 3 }}>
+        {/* Header Section */}
         <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} sm={8}>
             <Typography variant="h4" gutterBottom>
@@ -147,7 +258,7 @@ export default function AssignmentDetails() {
             <Button
               variant="contained"
               startIcon={<Chat />}
-              onClick={() => navigate(`/assignments/assignments/${id}/chat`)}
+              onClick={() => navigate(`/assignments/${id}/chat`)}
               sx={{ mb: 1 }}
               fullWidth
             >
@@ -158,7 +269,30 @@ export default function AssignmentDetails() {
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Time Status Section */}
+        {/* Generation Progress Section */}
+        {assignment.generation_status === 'in_progress' && (
+          <Paper sx={{ p: 3, mb: 3, bgcolor: 'grey.50' }}>
+            <Typography variant="h6" gutterBottom>
+              Generation Progress
+            </Typography>
+            <Stepper activeStep={activeStep} alternativeLabel>
+              {GENERATION_STEPS.map((label) => (
+                <Step key={label}>
+                  <StepLabel>{label}</StepLabel>
+                </Step>
+              ))}
+            </Stepper>
+            
+            <Box sx={{ mt: 3, textAlign: 'center' }}>
+              <Typography variant="h6" gutterBottom>
+                {generationProgress?.message || 'Processing...'}
+              </Typography>
+              <CircularProgress />
+            </Box>
+          </Paper>
+        )}
+
+        {/* Delivery Status Section */}
         <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
@@ -230,126 +364,40 @@ export default function AssignmentDetails() {
           </Alert>
         )}
 
-        {!deliveryStatus.canDeliver && assignment.completed && (
-          <Alert 
-            severity="info"
-            icon={<Error />}
-            sx={{ mb: 2 }}
+        {/* Start Generation Button - Only show for non-manual platform assignments */}
+        {assignment.has_deposit_been_paid && 
+         !assignment.completed && 
+         !assignment.is_manual && 
+         assignment.generation_status === 'not_started' && (
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleStartGeneration}
+            startIcon={<PlayArrow />}
+            sx={{ mt: 2 }}
           >
-            Assignment is completed but cannot be delivered until the 60% time mark is reached.
-          </Alert>
+            Start Generation Process
+          </Button>
+        )}
+
+        {/* GitHub Repository Section */}
+        {assignment.github_repository && (
+          <Paper sx={{ p: 3, mt: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+              <GitHub sx={{ mr: 1 }} />
+              GitHub Repository
+            </Typography>
+            <Link
+              href={assignment.github_repository}
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{ display: 'block', mt: 1 }}
+            >
+              View Repository
+            </Link>
+          </Paper>
         )}
       </Paper>
-
-      {/* Files Section */}
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Assignment Files
-            </Typography>
-            <List>
-              {assignment.assignment_files?.map((file) => (
-                <ListItem
-                  key={file.id}
-                  button
-                  onClick={() => setFilePreview(file)}
-                >
-                  <ListItemIcon>
-                    <AttachFile />
-                  </ListItemIcon>
-                  <ListItemText 
-                    primary={file.name}
-                    secondary={new Date(file.uploaded_at).toLocaleString()}
-                  />
-                </ListItem>
-              ))}
-              {(!assignment.assignment_files || assignment.assignment_files.length === 0) && (
-                <ListItem>
-                  <ListItemText 
-                    primary="No files attached"
-                    secondary="No files have been uploaded for this assignment"
-                  />
-                </ListItem>
-              )}
-            </List>
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Submission History
-            </Typography>
-            <List>
-              {assignment.submissions?.map((submission) => (
-                <ListItem
-                  key={submission.id}
-                  button
-                  onClick={() => navigate(`/assignments/${id}/submissions/${submission.id}`)}
-                >
-                  <ListItemIcon>
-                    {submission.delivered ? <CheckCircle color="success" /> : <PendingActions />}
-                  </ListItemIcon>
-                  <ListItemText 
-                    primary={`Version ${submission.version}`}
-                    secondary={`Completed: ${new Date(submission.date_completed).toLocaleString()}`}
-                  />
-                </ListItem>
-              ))}
-              {(!assignment.submissions || assignment.submissions.length === 0) && (
-                <ListItem>
-                  <ListItemText 
-                    primary="No submissions yet"
-                    secondary="Work is still in progress"
-                  />
-                </ListItem>
-              )}
-            </List>
-          </Paper>
-        </Grid>
-      </Grid>
-
-      {/* File Preview Dialog */}
-      <Dialog
-        open={!!filePreview}
-        onClose={() => setFilePreview(null)}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>
-          {filePreview?.name}
-        </DialogTitle>
-        <DialogContent>
-          {/* Add file preview logic based on file type */}
-          <Box sx={{ minHeight: 400 }}>
-            {filePreview?.type?.startsWith('image/') ? (
-              <img 
-                src={filePreview.url} 
-                alt={filePreview.name}
-                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-              />
-            ) : (
-              <iframe
-                src={filePreview?.url}
-                width="100%"
-                height="400"
-                title={filePreview?.name}
-              />
-            )}
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setFilePreview(null)}>Close</Button>
-          <Button 
-            variant="contained" 
-            href={filePreview?.url}
-            download
-          >
-            Download
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Container>
   );
 }

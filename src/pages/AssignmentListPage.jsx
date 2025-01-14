@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Container, 
   Typography, 
-  Box, 
+  Box,
   Paper, 
   Card,
   CardContent, 
@@ -17,14 +17,38 @@ import {
   MenuItem,
   Grid,
   Divider,
-  Alert
+  Alert,
+  CircularProgress,
+  Link,
+  Stepper,
+  Step,
+  StepLabel
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatIcon from '@mui/icons-material/Chat';
+import GitHubIcon from '@mui/icons-material/GitHub';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import PendingIcon from '@mui/icons-material/Pending';
 import axios from 'axios';
 
+const FILTER_OPTIONS = [
+  { value: 'all', label: 'All Assignments' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'revisions', label: 'Needs Revision' },
+  { value: 'unpaid', label: 'Deposit Unpaid' },
+  { value: 'generating', label: 'Generation In Progress' },
+];
 
+const GENERATION_STEPS = [
+  'Analyzing Requirements',
+  'Generating Plan',
+  'Creating Project',
+  'Reviewing',
+  'Final Verification',
+  'Pushing to GitHub'
+];
 
 export default function AssignmentListPage() {
   const [assignments, setAssignments] = useState([]);
@@ -33,12 +57,49 @@ export default function AssignmentListPage() {
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('deadline');
+  const [generatingAssignments, setGeneratingAssignments] = useState({});
   const navigate = useNavigate();
   const BASE_URL = import.meta.env.VITE_BASE_URL;
 
   useEffect(() => {
     fetchAssignments();
   }, [filter]);
+
+  // WebSocket connections for generating assignments
+  useEffect(() => {
+    const connections = {};
+    
+    assignments.forEach(assignment => {
+      if (assignment.generation_status === 'in_progress') {
+        const ws = new WebSocket(
+          `${BASE_URL.replace('http://', 'ws://')}/assignments/${assignment.id}/generation/`
+        );
+
+        ws.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          setGeneratingAssignments(prev => ({
+            ...prev,
+            [assignment.id]: data
+          }));
+
+          // Refresh assignments list if generation completes
+          if (data.status === 'completed') {
+            fetchAssignments();
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error(`WebSocket error for assignment ${assignment.id}:`, error);
+        };
+
+        connections[assignment.id] = ws;
+      }
+    });
+
+    return () => {
+      Object.values(connections).forEach(ws => ws.close());
+    };
+  }, [assignments]);
 
   const fetchAssignments = async () => {
     try {
@@ -64,7 +125,8 @@ export default function AssignmentListPage() {
     if (assignment.completed) return 'success';
     if (assignment.has_revisions) return 'warning';
     if (!assignment.has_deposit_been_paid) return 'error';
-    return 'info';
+    if (assignment.generation_status === 'in_progress') return 'info';
+    return 'default';
   };
 
   const getTimeRemaining = (deadline) => {
@@ -87,6 +149,46 @@ export default function AssignmentListPage() {
       canDeliver,
       timeLeft: canDeliver ? 'Ready for delivery' : getTimeRemaining(assignment.expected_delivery_time)
     };
+  };
+
+  const renderGenerationStatus = (assignment) => {
+    if (assignment.generation_status === 'in_progress') {
+      const progress = generatingAssignments[assignment.id];
+      return (
+        <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            Generation Progress
+          </Typography>
+          <Stepper 
+            activeStep={getStepFromStatus(progress?.status)} 
+            alternativeLabel
+            sx={{ transform: 'scale(0.8)', transformOrigin: 'left' }}
+          >
+            {GENERATION_STEPS.map((label) => (
+              <Step key={label}>
+                <StepLabel>{label}</StepLabel>
+              </Step>
+            ))}
+          </Stepper>
+          <Typography variant="body2" color="text.secondary" align="center" sx={{ mt: 1 }}>
+            {progress?.message || 'Processing...'}
+          </Typography>
+        </Box>
+      );
+    }
+    return null;
+  };
+
+  const getStepFromStatus = (status) => {
+    switch (status) {
+      case 'analyzing': return 0;
+      case 'planning': return 1;
+      case 'generating': return 2;
+      case 'reviewing': return 3;
+      case 'final_review': return 4;
+      case 'completed': return 5;
+      default: return 0;
+    }
   };
 
   return (
@@ -122,11 +224,11 @@ export default function AssignmentListPage() {
                   onChange={(e) => setFilter(e.target.value)}
                   label="Filter"
                 >
-                  <MenuItem value="all">All Assignments</MenuItem>
-                  <MenuItem value="completed">Completed</MenuItem>
-                  <MenuItem value="in_progress">In Progress</MenuItem>
-                  <MenuItem value="revisions">Needs Revision</MenuItem>
-                  <MenuItem value="unpaid">Deposit Unpaid</MenuItem>
+                  {FILTER_OPTIONS.map(option => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
                 </Select>
               </FormControl>
             </Grid>
@@ -154,6 +256,13 @@ export default function AssignmentListPage() {
           </Alert>
         )}
 
+        {/* Loading State */}
+        {loading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+            <CircularProgress />
+          </Box>
+        )}
+
         {/* Assignments List */}
         <Grid container spacing={3}>
           {assignments.map((assignment) => {
@@ -174,7 +283,7 @@ export default function AssignmentListPage() {
                           sx={{ mr: 1 }}
                         />
                         <Chip
-                          label={assignment.completed ? 'Completed' : 'In Progress'}
+                          label={assignment.completed ? 'Completed' : assignment.generation_status === 'in_progress' ? 'Generating' : 'In Progress'}
                           color={getStatusColor(assignment)}
                           size="small"
                         />
@@ -185,6 +294,9 @@ export default function AssignmentListPage() {
                       {assignment.description.substring(0, 200)}...
                     </Typography>
                     
+                    {/* Generation Status */}
+                    {renderGenerationStatus(assignment)}
+                    
                     <Grid container spacing={2}>
                       <Grid item xs={12} sm={6}>
                         <Typography variant="body2">
@@ -193,6 +305,23 @@ export default function AssignmentListPage() {
                         <Typography variant="body2">
                           <strong>Expected Delivery:</strong> {new Date(assignment.expected_delivery_time).toLocaleString()}
                         </Typography>
+                        {assignment.github_repository && (
+                          <Link
+                            href={assignment.github_repository}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{ 
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 0.5,
+                              mt: 1,
+                              color: 'primary.main'
+                            }}
+                          >
+                            <GitHubIcon sx={{ fontSize: 16 }} />
+                            View Repository
+                          </Link>
+                        )}
                       </Grid>
                       <Grid item xs={12} sm={6}>
                         <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
@@ -220,14 +349,14 @@ export default function AssignmentListPage() {
                       size="small"
                       variant="outlined"
                       startIcon={<ChatIcon />}
-                      onClick={() => navigate(`/assignments/assignments/${assignment.id}/chat`)}
+                      onClick={() => navigate(`/assignments/${assignment.id}/chat`)}
                     >
                       Chat
                     </Button>
                     <Button
                       size="small"
                       variant="contained"
-                      onClick={() => navigate(`/assignments/assignments/${assignment.id}`)}
+                      onClick={() => navigate(`/assignments/${assignment.id}`)}
                     >
                       View Details
                     </Button>
