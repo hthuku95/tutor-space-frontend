@@ -48,15 +48,15 @@ const Navbar = () => {
             >
               <AddIcon />
             </IconButton>
-
-            <IconButton
+          {/**            <IconButton
               color="inherit"
               component={RouterLink}
               to="/bidding"
               aria-label="bidding"
             >
               <GavelIcon />
-            </IconButton>
+            </IconButton> */}
+
           </>
         )}
 
