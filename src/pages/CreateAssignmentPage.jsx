@@ -11,26 +11,14 @@ import {
   MenuItem,
   Box,
   Alert,
-  CircularProgress,
-  Stepper,
-  Step,
-  StepLabel,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import GenerationProgress from '../components/GenerationProgress';
 
 const ASSIGNMENT_TYPES = [
   { value: 'P', label: 'Programming Assignment' },
   { value: 'A', label: 'Academic Writing Assignment' },
-];
-
-const GENERATION_STEPS = [
-  'Analyzing Requirements',
-  'Generating Plan',
-  'Creating Project',
-  'Reviewing',
-  'Final Verification',
-  'Pushing to GitHub'
 ];
 
 export default function CreateAssignmentPage() {
@@ -42,8 +30,7 @@ export default function CreateAssignmentPage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [activeStep, setActiveStep] = useState(0);
-  const [progress, setProgress] = useState(null);
+  const [assignmentId, setAssignmentId] = useState(null);
   const BASE_URL = import.meta.env.VITE_BASE_URL;
 
   const handleInputChange = (e) => {
@@ -54,6 +41,12 @@ export default function CreateAssignmentPage() {
     }));
   };
 
+  const handleGenerationComplete = (data) => {
+    if (data.status === 'completed') {
+      navigate(`/assignments/${assignmentId}`);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -62,7 +55,7 @@ export default function CreateAssignmentPage() {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        `${BASE_URL}/api/agents/generate/`,
+        `${BASE_URL}/api/agents/generate`,
         formData,
         {
           headers: {
@@ -73,60 +66,13 @@ export default function CreateAssignmentPage() {
       );
 
       if (response.data.success) {
-        // Create WebSocket connection for progress updates
-        const ws = new WebSocket(
-          `${BASE_URL.replace('http://', 'ws://')}/assignments/${response.data.assignment_id}/generation/`
-        );
-
-        ws.onopen = () => {
-          console.log('WebSocket Connected');
-        };
-
-        ws.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-          console.log('WebSocket message:', data);
-          setProgress(data);
-          
-          // Update stepper based on status
-          switch (data.status) {
-            case 'analyzing':
-              setActiveStep(0);
-              break;
-            case 'planning':
-              setActiveStep(1);
-              break;
-            case 'generating':
-              setActiveStep(2);
-              break;
-            case 'reviewing':
-              setActiveStep(3);
-              break;
-            case 'final_review':
-              setActiveStep(4);
-              break;
-            case 'completed':
-              setActiveStep(5);
-              // Navigate to assignment details when complete
-              ws.close();
-              navigate(`/assignments/${response.data.assignment_id}`);
-              break;
-          }
-        };
-
-        ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          setError('Error connecting to real-time updates');
-        };
-
-        ws.onclose = () => {
-          console.log('WebSocket connection closed');
-        };
-
+        setAssignmentId(response.data.assignment_id);
       } else {
         setError(response.data.error || 'Failed to create assignment');
         setLoading(false);
       }
     } catch (err) {
+      console.error('Error creating assignment:', err);
       setError(err.response?.data?.error || 'Failed to create assignment');
       setLoading(false);
     }
@@ -145,24 +91,14 @@ export default function CreateAssignmentPage() {
           </Alert>
         )}
 
-        {loading ? (
+        {loading && assignmentId ? (
           <Box sx={{ mt: 4 }}>
-            <Stepper activeStep={activeStep} alternativeLabel>
-              {GENERATION_STEPS.map((label) => (
-                <Step key={label}>
-                  <StepLabel>{label}</StepLabel>
-                </Step>
-              ))}
-            </Stepper>
-            
-            {progress && (
-              <Box sx={{ mt: 3, textAlign: 'center' }}>
-                <Typography variant="h6" gutterBottom>
-                  {progress.message || 'Processing...'}
-                </Typography>
-                <CircularProgress />
-              </Box>
-            )}
+            <GenerationProgress 
+              id={assignmentId}
+              baseUrl={BASE_URL}
+              onComplete={handleGenerationComplete}
+              onError={(error) => setError(error)}
+            />
           </Box>
         ) : (
           <form onSubmit={handleSubmit}>

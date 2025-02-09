@@ -10,56 +10,36 @@ import {
   Divider,
   CircularProgress,
   Alert,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
   Card,
   CardContent,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Stepper,
-  Step,
-  StepLabel,
   Link
 } from '@mui/material';
 import {
   AccessTime,
   Assignment,
-  AttachFile,
   Chat,
   CheckCircle,
-  Error,
-  History,
   PendingActions,
   Warning,
   GitHub,
-  PlayArrow
+  PlayArrow,
+  History
 } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-
-const GENERATION_STEPS = [
-  'Analyzing Requirements',
-  'Generating Plan',
-  'Creating Project',
-  'Reviewing',
-  'Final Verification',
-  'Pushing to GitHub'
-];
+import GenerationProgress from '../components/GenerationProgress';
 
 export default function AssignmentDetails() {
   const [assignment, setAssignment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [filePreview, setFilePreview] = useState(null);
-  const [generationProgress, setGenerationProgress] = useState(null);
-  const [activeStep, setActiveStep] = useState(0);
   const { id } = useParams();
   const navigate = useNavigate();
   const BASE_URL = import.meta.env.VITE_BASE_URL;
+
+  useEffect(() => {
+    fetchAssignmentDetails();
+  }, [id]);
 
   const fetchAssignmentDetails = async () => {
     try {
@@ -86,83 +66,6 @@ export default function AssignmentDetails() {
     }
   };
 
-  useEffect(() => {
-    fetchAssignmentDetails();
-  }, [id]);
-
-  // WebSocket connection for generation progress
-  useEffect(() => {
-    let ws;
-
-    const connectWebSocket = () => {
-      // Close existing connection if any
-      if (ws) {
-        ws.close();
-      }
-
-      console.log('Connecting to WebSocket...');
-      ws = new WebSocket(
-        `${BASE_URL.replace('http', 'ws')}/ws/assignments/${id}/generation/`
-      );
-
-      ws.onopen = () => {
-        console.log('WebSocket connected');
-      };
-
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        console.log('WebSocket message:', data);
-        
-        // Update progress state
-        setGenerationProgress(data);
-        
-        // Update stepper based on status
-        switch (data.status) {
-          case 'analyzing':
-            setActiveStep(0);
-            break;
-          case 'planning':
-            setActiveStep(1);
-            break;
-          case 'generating':
-            setActiveStep(2);
-            break;
-          case 'reviewing':
-            setActiveStep(3);
-            break;
-          case 'final_review':
-            setActiveStep(4);
-            break;
-          case 'completed':
-            setActiveStep(5);
-            fetchAssignmentDetails(); // Refresh assignment details
-            break;
-        }
-      };
-
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        setError('Error connecting to real-time updates');
-      };
-
-      ws.onclose = () => {
-        console.log('WebSocket connection closed');
-      };
-    };
-
-    // Connect if assignment is being generated
-    if (assignment?.generation_status === 'in_progress') {
-      connectWebSocket();
-    }
-
-    return () => {
-      if (ws) {
-        console.log('Cleaning up WebSocket connection');
-        ws.close();
-      }
-    };
-  }, [assignment?.generation_status, id]);
-
   const handleStartGeneration = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -176,7 +79,6 @@ export default function AssignmentDetails() {
           }
         }
       );
-      // Refresh assignment details to get updated generation status
       fetchAssignmentDetails();
     } catch (error) {
       setError('Failed to start generation process');
@@ -275,20 +177,11 @@ export default function AssignmentDetails() {
             <Typography variant="h6" gutterBottom>
               Generation Progress
             </Typography>
-            <Stepper activeStep={activeStep} alternativeLabel>
-              {GENERATION_STEPS.map((label) => (
-                <Step key={label}>
-                  <StepLabel>{label}</StepLabel>
-                </Step>
-              ))}
-            </Stepper>
-            
-            <Box sx={{ mt: 3, textAlign: 'center' }}>
-              <Typography variant="h6" gutterBottom>
-                {generationProgress?.message || 'Processing...'}
-              </Typography>
-              <CircularProgress />
-            </Box>
+            <GenerationProgress 
+              id={assignment.id}
+              baseUrl={BASE_URL}
+              onComplete={fetchAssignmentDetails}
+            />
           </Paper>
         )}
 

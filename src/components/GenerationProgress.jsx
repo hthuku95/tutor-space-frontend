@@ -1,15 +1,13 @@
-import React from 'react';
-import {
-  Box,
-  Paper,
-  Typography,
+import React, { useState, useEffect } from 'react';
+import { 
+  Box, 
+  Typography, 
+  CircularProgress,
   Stepper,
   Step,
-  StepLabel,
-  CircularProgress,
-  Alert
+  StepLabel
 } from '@mui/material';
-import { useWebSocket } from '../hooks/useWebSocket';
+import PropTypes from 'prop-types';
 
 const GENERATION_STEPS = [
   'Analyzing Requirements',
@@ -39,42 +37,76 @@ const getStepFromStatus = (status) => {
   }
 };
 
-export default function GenerationProgress({ 
-  type, 
-  id,
-  baseUrl,
-  onComplete 
-}) {
-  const { data, error, status } = useWebSocket(type, id, baseUrl);
+export default function GenerationProgress({ id, baseUrl, onComplete, onError }) {
+  const [activeStep, setActiveStep] = useState(0);
+  const [message, setMessage] = useState('Starting generation process...');
+  const [ws, setWs] = useState(null);
 
-  React.useEffect(() => {
-    if (data?.status === 'completed' && onComplete) {
-      onComplete(data);
+  useEffect(() => {
+    setupWebSocket();
+
+    return () => {
+      if (ws) {
+        ws.close();
+      }
+    };
+  }, [id, baseUrl]); // Reconnect if id or baseUrl changes
+
+  const setupWebSocket = () => {
+    // Close existing connection if any
+    if (ws) {
+      ws.close();
     }
-  }, [data?.status, onComplete]);
 
-  if (error) {
-    return (
-      <Alert severity="error" sx={{ mt: 2 }}>
-        Error tracking progress: {error.message}
-      </Alert>
-    );
-  }
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsBaseUrl = baseUrl.replace('https://', '').replace('http://', '');
+    const wsUrl = `${wsProtocol}//${wsBaseUrl}/assignments/${id}/generation`;
 
-  if (!data) {
-    return (
-      <Box sx={{ textAlign: 'center', mt: 2 }}>
-        <CircularProgress />
-        <Typography variant="body2" sx={{ mt: 1 }}>
-          Connecting to progress tracker...
-        </Typography>
-      </Box>
-    );
-  }
+    const newWs = new WebSocket(wsUrl);
+
+    newWs.onopen = () => {
+      console.log('Generation WebSocket connected');
+    };
+
+    newWs.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('Generation status update:', data);
+
+        setActiveStep(getStepFromStatus(data.status));
+        setMessage(data.message || 'Processing...');
+
+        if (data.status === 'completed') {
+          onComplete?.(data);
+          newWs.close();
+        } else if (data.status === 'error') {
+          onError?.(data.message || 'An error occurred during generation');
+          newWs.close();
+        }
+      } catch (err) {
+        console.error('Error processing WebSocket message:', err);
+        onError?.('Error processing status update');
+      }
+    };
+
+    newWs.onclose = (event) => {
+      console.log('Generation WebSocket closed:', event);
+      if (!event.wasClean) {
+        onError?.('Connection to generation process lost');
+      }
+    };
+
+    newWs.onerror = (error) => {
+      console.error('Generation WebSocket error:', error);
+      onError?.('Error connecting to generation process');
+    };
+
+    setWs(newWs);
+  };
 
   return (
-    <Paper sx={{ p: 3, mt: 2 }}>
-      <Stepper activeStep={getStepFromStatus(data.status)} alternativeLabel>
+    <Box>
+      <Stepper activeStep={activeStep} alternativeLabel>
         {GENERATION_STEPS.map((label) => (
           <Step key={label}>
             <StepLabel>{label}</StepLabel>
@@ -84,20 +116,17 @@ export default function GenerationProgress({
       
       <Box sx={{ mt: 3, textAlign: 'center' }}>
         <Typography variant="h6" gutterBottom>
-          {data.message || 'Processing...'}
+          {message}
         </Typography>
-        
-        {data.status !== 'completed' && <CircularProgress />}
-        
-        {data.details && (
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            {typeof data.details === 'string' 
-              ? data.details 
-              : JSON.stringify(data.details, null, 2)
-            }
-          </Typography>
-        )}
+        <CircularProgress />
       </Box>
-    </Paper>
+    </Box>
   );
 }
+
+GenerationProgress.propTypes = {
+  id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  baseUrl: PropTypes.string.isRequired,
+  onComplete: PropTypes.func,
+  onError: PropTypes.func
+};

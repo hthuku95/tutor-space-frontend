@@ -50,6 +50,18 @@ const GENERATION_STEPS = [
   'Pushing to GitHub'
 ];
 
+const getStepFromStatus = (status) => {
+  switch (status) {
+    case 'analyzing': return 0;
+    case 'planning': return 1;
+    case 'generating': return 2;
+    case 'reviewing': return 3;
+    case 'final_review': return 4;
+    case 'completed': return 5;
+    default: return 0;
+  }
+};
+
 export default function AssignmentListPage() {
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -58,48 +70,70 @@ export default function AssignmentListPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('deadline');
   const [generatingAssignments, setGeneratingAssignments] = useState({});
+  const [wsConnections, setWsConnections] = useState({});
   const navigate = useNavigate();
   const BASE_URL = import.meta.env.VITE_BASE_URL;
 
   useEffect(() => {
     fetchAssignments();
+    return () => {
+      // Cleanup WebSocket connections
+      Object.values(wsConnections).forEach(ws => ws?.close());
+    };
   }, [filter]);
 
-  // WebSocket connections for generating assignments
-  useEffect(() => {
-    const connections = {};
-    
-    assignments.forEach(assignment => {
-      if (assignment.generation_status === 'in_progress') {
-        const ws = new WebSocket(
-          `${BASE_URL.replace('http://', 'ws://')}/assignments/${assignment.id}/generation/`
-        );
-
-        ws.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-          setGeneratingAssignments(prev => ({
-            ...prev,
-            [assignment.id]: data
-          }));
-
-          // Refresh assignments list if generation completes
-          if (data.status === 'completed') {
-            fetchAssignments();
-          }
-        };
-
-        ws.onerror = (error) => {
-          console.error(`WebSocket error for assignment ${assignment.id}:`, error);
-        };
-
-        connections[assignment.id] = ws;
+  const setupWebSocket = (assignment) => {
+    if (assignment.generation_status === 'in_progress') {
+      // Close existing connection if any
+      if (wsConnections[assignment.id]) {
+        wsConnections[assignment.id].close();
       }
-    });
 
-    return () => {
-      Object.values(connections).forEach(ws => ws.close());
-    };
-  }, [assignments]);
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsBaseUrl = BASE_URL.replace('https://', '').replace('http://', '');
+      const ws = new WebSocket(
+        `${wsProtocol}//${wsBaseUrl}/assignments/${assignment.id}/generation`
+      );
+
+      ws.onopen = () => {
+        console.log(`WebSocket connected for assignment ${assignment.id}`);
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        setGeneratingAssignments(prev => ({
+          ...prev,
+          [assignment.id]: data
+        }));
+
+        // If generation completes, refresh assignments list
+        if (data.status === 'completed') {
+          fetchAssignments();
+          ws.close();
+        }
+      };
+
+      ws.onclose = () => {
+        console.log(`WebSocket closed for assignment ${assignment.id}`);
+        // Remove from connections
+        setWsConnections(prev => {
+          const newConnections = { ...prev };
+          delete newConnections[assignment.id];
+          return newConnections;
+        });
+      };
+
+      ws.onerror = (error) => {
+        console.error(`WebSocket error for assignment ${assignment.id}:`, error);
+      };
+
+      // Store the connection
+      setWsConnections(prev => ({
+        ...prev,
+        [assignment.id]: ws
+      }));
+    }
+  };
 
   const fetchAssignments = async () => {
     try {
@@ -112,7 +146,16 @@ export default function AssignmentListPage() {
           params: { filter, search: searchQuery, sort: sortBy }
         }
       );
+      
       setAssignments(response.data);
+      
+      // Setup WebSocket connections for generating assignments
+      response.data.forEach(assignment => {
+        if (assignment.generation_status === 'in_progress' && !wsConnections[assignment.id]) {
+          setupWebSocket(assignment);
+        }
+      });
+      
       setError(null);
     } catch (err) {
       setError(err.response?.data?.error || 'Error fetching assignments');
@@ -138,17 +181,6 @@ export default function AssignmentListPage() {
     if (diffDays < 0) return 'Overdue';
     if (diffDays === 0) return 'Due today';
     return `${diffDays} days remaining`;
-  };
-
-  const getDeliveryStatus = (assignment) => {
-    const expectedDelivery = new Date(assignment.expected_delivery_time);
-    const now = new Date();
-    const canDeliver = now >= expectedDelivery;
-    
-    return {
-      canDeliver,
-      timeLeft: canDeliver ? 'Ready for delivery' : getTimeRemaining(assignment.expected_delivery_time)
-    };
   };
 
   const renderGenerationStatus = (assignment) => {
@@ -177,18 +209,6 @@ export default function AssignmentListPage() {
       );
     }
     return null;
-  };
-
-  const getStepFromStatus = (status) => {
-    switch (status) {
-      case 'analyzing': return 0;
-      case 'planning': return 1;
-      case 'generating': return 2;
-      case 'reviewing': return 3;
-      case 'final_review': return 4;
-      case 'completed': return 5;
-      default: return 0;
-    }
   };
 
   return (
@@ -265,106 +285,105 @@ export default function AssignmentListPage() {
 
         {/* Assignments List */}
         <Grid container spacing={3}>
-          {assignments.map((assignment) => {
-            const deliveryStatus = getDeliveryStatus(assignment);
-            return (
-              <Grid item xs={12} key={assignment.id}>
-                <Card>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                      <Typography variant="h6" component="div">
-                        {assignment.subject}
+          {assignments.map((assignment) => (
+            <Grid item xs={12} key={assignment.id}>
+              <Card>
+                <CardContent>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                    <Typography variant="h6" component="div">
+                      {assignment.subject}
+                    </Typography>
+                    <Box>
+                      <Chip 
+                        label={assignment.assignment_type_display}
+                        color="primary"
+                        size="small"
+                        sx={{ mr: 1 }}
+                      />
+                      <Chip
+                        label={assignment.completed ? 'Completed' : 
+                               assignment.generation_status === 'in_progress' ? 'Generating' : 
+                               'In Progress'}
+                        color={getStatusColor(assignment)}
+                        size="small"
+                      />
+                    </Box>
+                  </Box>
+                  
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    {assignment.description.substring(0, 200)}...
+                  </Typography>
+                  
+                  {/* Generation Status */}
+                  {renderGenerationStatus(assignment)}
+                  
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="body2">
+                        <strong>Deadline:</strong> {new Date(assignment.completion_deadline).toLocaleString()}
                       </Typography>
-                      <Box>
-                        <Chip 
-                          label={assignment.assignment_type_display}
-                          color="primary"
-                          size="small"
+                      <Typography variant="body2">
+                        <strong>Expected Delivery:</strong> {new Date(assignment.expected_delivery_time).toLocaleString()}
+                      </Typography>
+                      {assignment.github_repository && (
+                        <Link
+                          href={assignment.github_repository}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          sx={{ 
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.5,
+                            mt: 1,
+                            color: 'primary.main'
+                          }}
+                        >
+                          <GitHubIcon sx={{ fontSize: 16 }} />
+                          View Repository
+                        </Link>
+                      )}
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                        <Chip
+                          label={assignment.delivery_status?.timeLeft || getTimeRemaining(assignment.completion_deadline)}
+                          color={assignment.delivery_status?.canDeliver ? 'success' : 'warning'}
                           sx={{ mr: 1 }}
                         />
-                        <Chip
-                          label={assignment.completed ? 'Completed' : assignment.generation_status === 'in_progress' ? 'Generating' : 'In Progress'}
-                          color={getStatusColor(assignment)}
-                          size="small"
-                        />
-                      </Box>
-                    </Box>
-                    
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      {assignment.description.substring(0, 200)}...
-                    </Typography>
-                    
-                    {/* Generation Status */}
-                    {renderGenerationStatus(assignment)}
-                    
-                    <Grid container spacing={2}>
-                      <Grid item xs={12} sm={6}>
-                        <Typography variant="body2">
-                          <strong>Deadline:</strong> {new Date(assignment.completion_deadline).toLocaleString()}
-                        </Typography>
-                        <Typography variant="body2">
-                          <strong>Expected Delivery:</strong> {new Date(assignment.expected_delivery_time).toLocaleString()}
-                        </Typography>
-                        {assignment.github_repository && (
-                          <Link
-                            href={assignment.github_repository}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            sx={{ 
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 0.5,
-                              mt: 1,
-                              color: 'primary.main'
-                            }}
-                          >
-                            <GitHubIcon sx={{ fontSize: 16 }} />
-                            View Repository
-                          </Link>
-                        )}
-                      </Grid>
-                      <Grid item xs={12} sm={6}>
-                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                        {!assignment.has_deposit_been_paid && (
                           <Chip
-                            label={deliveryStatus.timeLeft}
-                            color={deliveryStatus.canDeliver ? 'success' : 'warning'}
+                            label="Deposit Pending"
+                            color="error"
                             sx={{ mr: 1 }}
                           />
-                          {!assignment.has_deposit_been_paid && (
-                            <Chip
-                              label="Deposit Pending"
-                              color="error"
-                              sx={{ mr: 1 }}
-                            />
-                          )}
-                        </Box>
-                      </Grid>
+                        )}
+                      </Box>
                     </Grid>
-                  </CardContent>
-                  
-                  <Divider />
-                  
-                  <CardActions sx={{ justifyContent: 'flex-end', p: 2 }}>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<ChatIcon />}
-                      onClick={() => navigate(`/assignments/${assignment.id}/chat`)}
-                    >
-                      Chat
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      onClick={() => navigate(`/assignments/${assignment.id}`)}
-                    >
-                      View Details
-                    </Button>
-                  </CardActions>
-                </Card>
-              </Grid>
-            );
-          })}
+                  </Grid>
+                </CardContent>
+                
+                <Divider />
+                
+                <CardActions sx={{ justifyContent: 'flex-end', p: 2 }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<ChatIcon />}
+                    onClick={() => navigate(`/assignments/${assignment.id}/chat`)}
+                  >
+                    Chat
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    onClick={() => navigate(`/assignments/${assignment.id}`)}
+                  >
+                    View Details
+                  </Button>
+                </CardActions>
+              </Card>
+            </Grid>
+          ))}
           
           {/* Empty State */}
           {!loading && assignments.length === 0 && (
