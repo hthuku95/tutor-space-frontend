@@ -55,7 +55,7 @@ export default function CreateAssignmentPage() {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        `${BASE_URL}/api/agents/generate`,
+        `${BASE_URL}/api/agents/generate/`,
         formData,
         {
           headers: {
