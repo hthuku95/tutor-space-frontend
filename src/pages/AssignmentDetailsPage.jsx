@@ -171,19 +171,20 @@ export default function AssignmentDetails() {
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Generation Progress Section */}
-        {assignment.generation_status === 'in_progress' && (
-          <Paper sx={{ p: 3, mb: 3, bgcolor: 'grey.50' }}>
-            <Typography variant="h6" gutterBottom>
-              Generation Progress
-            </Typography>
-            <GenerationProgress 
-              id={assignment.id}
-              baseUrl={BASE_URL}
-              onComplete={fetchAssignmentDetails}
-            />
-          </Paper>
-        )}
+      {/* Generation Progress Section */}
+      {assignment.generation_status === 'in_progress' && (
+        <Paper sx={{ p: 3, mb: 3, bgcolor: 'grey.50' }}>
+          <Typography variant="h6" gutterBottom>
+            Generation Progress
+          </Typography>
+          <GenerationProgress 
+            id={assignment.id}
+            baseUrl={BASE_URL}
+            onComplete={fetchAssignmentDetails}
+            onError={(errorMessage) => setError(errorMessage)}  // Added error handling
+          />
+        </Paper>
+      )}
 
         {/* Delivery Status Section */}
         <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
