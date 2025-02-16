@@ -92,7 +92,14 @@ export default function AssignmentListPage() {
   };
 
   const renderDeliveryStatus = (assignment) => {
-    if (assignment.is_manual) return null;
+    if (!assignment || assignment.is_manual) {
+      return null;
+    }
+
+    // Only proceed if it's a platform assignment
+    if (!assignment.original_platform) {
+      return null;
+    }
 
     return (
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
