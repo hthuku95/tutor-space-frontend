@@ -114,7 +114,15 @@ export default function AssignmentDetails() {
   };
 
   const renderDeliveryStatus = () => {
-    if (!assignment || assignment.is_manual) return null;
+    // Early return if assignment is manual
+    if (!assignment || assignment.is_manual) {
+      return null;
+    }
+
+    // Only proceed if it's a platform assignment
+    if (!assignment.original_platform) {
+      return null;
+    }
 
     const deliveryStatus = getDeliveryStatus();
     if (!deliveryStatus) return null;

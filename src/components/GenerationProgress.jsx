@@ -85,28 +85,26 @@ export default function GenerationProgress({ id, baseUrl, onComplete, onError })
       try {
         const data = JSON.parse(event.data);
         console.log('Generation status update:', data);
-
-        // Handle error status specifically
-        if (data.status === 'error' || data.status.includes('failed')) {
-          setError(data.message || 'An error occurred during generation');
-          onError?.(data.message || 'An error occurred during generation');
-          return;
+    
+        // Validate data before using it
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid message format');
         }
-
-        const newStep = getStepFromStatus(data.status);
-        setActiveStep(newStep);
+    
+        // Update progress based on valid status
+        const status = data.status || 'unknown';
+        setActiveStep(getStepFromStatus(status));
         setMessage(data.message || 'Processing...');
-
-        // Update progress and handle completion
-        if (data.status === 'completed') {
-          setConnectionStatus('completed');
+    
+        if (status === 'completed') {
           onComplete?.(data);
           newWs.close();
+        } else if (status === 'error') {
+          onError?.(data.message || 'An error occurred during generation');
+          newWs.close();
         }
-
       } catch (err) {
         console.error('Error processing WebSocket message:', err);
-        setError('Error processing status update');
         onError?.('Error processing status update');
       }
     };
