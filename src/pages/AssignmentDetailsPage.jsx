@@ -23,7 +23,8 @@ import {
   Warning,
   GitHub,
   PlayArrow,
-  History
+  History,
+  Language
 } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -86,7 +87,8 @@ export default function AssignmentDetails() {
   };
 
   const getDeliveryStatus = () => {
-    if (!assignment) return {};
+    if (!assignment || assignment.is_manual) return null;
+    
     const expectedDelivery = new Date(assignment.expected_delivery_time);
     const now = new Date();
     const totalTime = new Date(assignment.completion_deadline) - new Date(assignment.timestamp);
@@ -111,6 +113,67 @@ export default function AssignmentDetails() {
     return `${minutes} minutes`;
   };
 
+  const renderDeliveryStatus = () => {
+    if (!assignment || assignment.is_manual) return null;
+
+    const deliveryStatus = getDeliveryStatus();
+    if (!deliveryStatus) return null;
+
+    return (
+      <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Delivery Status
+          </Typography>
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={12} md={8}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <AccessTime sx={{ mr: 1 }} color="action" />
+                <Typography variant="body1">
+                  {deliveryStatus.canDeliver 
+                    ? 'Ready for delivery'
+                    : `Time until 60% mark: ${formatTimeLeft(deliveryStatus.timeLeft)}`
+                  }
+                </Typography>
+              </Box>
+              <Box sx={{ position: 'relative', pt: 1 }}>
+                <Box
+                  sx={{
+                    height: 10,
+                    borderRadius: 5,
+                    bgcolor: 'grey.300',
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <Box
+                    sx={{
+                      height: '100%',
+                      borderRadius: 5,
+                      bgcolor: deliveryStatus.canDeliver ? 'success.main' : 'primary.main',
+                      width: `${deliveryStatus.progress}%`,
+                      transition: 'width 0.5s ease-in-out',
+                    }}
+                  />
+                </Box>
+              </Box>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Box sx={{ textAlign: 'right' }}>
+                <Typography variant="body2" color="textSecondary">
+                  Expected Delivery:
+                </Typography>
+                <Typography variant="body1">
+                  {deliveryStatus.expectedDeliveryDate.toLocaleString()}
+                </Typography>
+              </Box>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+    );
+  };
+
   if (loading) return (
     <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
       <CircularProgress />
@@ -125,8 +188,6 @@ export default function AssignmentDetails() {
 
   if (!assignment) return null;
 
-  const deliveryStatus = getDeliveryStatus();
-
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Paper sx={{ p: 3, mb: 3 }}>
@@ -136,7 +197,7 @@ export default function AssignmentDetails() {
             <Typography variant="h4" gutterBottom>
               {assignment.subject}
             </Typography>
-            <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+            <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
               <Chip
                 label={assignment.assignment_type_display}
                 color="primary"
@@ -152,6 +213,13 @@ export default function AssignmentDetails() {
                   label="Has Revisions"
                   color="warning"
                   icon={<History />}
+                />
+              )}
+              {!assignment.is_manual && (
+                <Chip
+                  label={assignment.original_platform?.platform_name || 'External Platform'}
+                  color="info"
+                  icon={<Language />}
                 />
               )}
             </Box>
@@ -171,73 +239,23 @@ export default function AssignmentDetails() {
 
         <Divider sx={{ my: 2 }} />
 
-      {/* Generation Progress Section */}
-      {assignment.generation_status === 'in_progress' && (
-        <Paper sx={{ p: 3, mb: 3, bgcolor: 'grey.50' }}>
-          <Typography variant="h6" gutterBottom>
-            Generation Progress
-          </Typography>
-          <GenerationProgress 
-            id={assignment.id}
-            baseUrl={BASE_URL}
-            onComplete={fetchAssignmentDetails}
-            onError={(errorMessage) => setError(errorMessage)}  // Added error handling
-          />
-        </Paper>
-      )}
-
-        {/* Delivery Status Section */}
-        <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
-          <CardContent>
+        {/* Generation Progress Section */}
+        {assignment.generation_status === 'in_progress' && (
+          <Paper sx={{ p: 3, mb: 3, bgcolor: 'grey.50' }}>
             <Typography variant="h6" gutterBottom>
-              Delivery Status
+              Generation Progress
             </Typography>
-            <Grid container spacing={2} alignItems="center">
-              <Grid item xs={12} md={8}>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <AccessTime sx={{ mr: 1 }} color="action" />
-                  <Typography variant="body1">
-                    {deliveryStatus.canDeliver 
-                      ? 'Ready for delivery'
-                      : `Time until 60% mark: ${formatTimeLeft(deliveryStatus.timeLeft)}`
-                    }
-                  </Typography>
-                </Box>
-                <Box sx={{ position: 'relative', pt: 1 }}>
-                  <Box
-                    sx={{
-                      height: 10,
-                      borderRadius: 5,
-                      bgcolor: 'grey.300',
-                      position: 'relative',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        height: '100%',
-                        borderRadius: 5,
-                        bgcolor: deliveryStatus.canDeliver ? 'success.main' : 'primary.main',
-                        width: `${deliveryStatus.progress}%`,
-                        transition: 'width 0.5s ease-in-out',
-                      }}
-                    />
-                  </Box>
-                </Box>
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <Box sx={{ textAlign: 'right' }}>
-                  <Typography variant="body2" color="textSecondary">
-                    Expected Delivery:
-                  </Typography>
-                  <Typography variant="body1">
-                    {deliveryStatus.expectedDeliveryDate.toLocaleString()}
-                  </Typography>
-                </Box>
-              </Grid>
-            </Grid>
-          </CardContent>
-        </Card>
+            <GenerationProgress 
+              id={assignment.id}
+              baseUrl={BASE_URL}
+              onComplete={() => fetchAssignmentDetails()}
+              onError={(error) => setError(error)}
+            />
+          </Paper>
+        )}
+
+        {/* Delivery Status Section - Only for non-manual assignments */}
+        {renderDeliveryStatus()}
 
         {/* Description Section */}
         <Typography variant="h6" gutterBottom>
@@ -248,7 +266,7 @@ export default function AssignmentDetails() {
         </Typography>
 
         {/* Status Alerts */}
-        {!assignment.has_deposit_been_paid && (
+        {!assignment.has_deposit_been_paid && !assignment.is_manual && (
           <Alert 
             severity="warning" 
             icon={<Warning />}
