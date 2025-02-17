@@ -37,7 +37,7 @@ const getStepFromStatus = (status) => {
     case 'analysis_failed':
     case 'planning_failed':
     case 'implementation_failed':
-      return -1; // Indicates error state
+      return -1;
     default:
       return 0;
   }
@@ -46,32 +46,15 @@ const getStepFromStatus = (status) => {
 export default function GenerationProgress({ id, baseUrl, onComplete, onError }) {
   const [activeStep, setActiveStep] = useState(0);
   const [message, setMessage] = useState('Starting generation process...');
-  const [ws, setWs] = useState(null);
   const [error, setError] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
+  const [ws, setWs] = useState(null);
 
   useEffect(() => {
-    setupWebSocket();
-
-    // Cleanup on unmount or id/baseUrl change
-    return () => {
-      if (ws) {
-        ws.close();
-      }
-    };
-  }, [id, baseUrl]);
-
-  const setupWebSocket = () => {
-    // Close existing connection if any
-    if (ws) {
-      ws.close();
-    }
-
-    // Construct WebSocket URL
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsBaseUrl = baseUrl.replace('https://', '').replace('http://', '');
-    const wsUrl = `${wsProtocol}//${wsBaseUrl}/assignments/${id}/generation/`; // Added trailing slash
-
+    const wsBaseUrl = baseUrl.replace(/^https?:\/\//, '');
+    const wsUrl = `${wsProtocol}//${wsBaseUrl}/assignments/${id}/generation/`;
+    
     console.log('Connecting to WebSocket:', wsUrl);
     const newWs = new WebSocket(wsUrl);
 
@@ -85,27 +68,28 @@ export default function GenerationProgress({ id, baseUrl, onComplete, onError })
       try {
         const data = JSON.parse(event.data);
         console.log('Generation status update:', data);
-    
-        // Validate data before using it
-        if (!data || typeof data !== 'object') {
-          throw new Error('Invalid message format');
-        }
-    
-        // Update progress based on valid status
-        const status = data.status || 'unknown';
-        setActiveStep(getStepFromStatus(status));
-        setMessage(data.message || 'Processing...');
-    
-        if (status === 'completed') {
-          onComplete?.(data);
-          newWs.close();
-        } else if (status === 'error') {
-          onError?.(data.message || 'An error occurred during generation');
-          newWs.close();
+
+        if (data) {
+          const status = data.status || 'unknown';
+          setActiveStep(getStepFromStatus(status));
+          setMessage(data.message || 'Processing...');
+
+          if (status === 'completed') {
+            setConnectionStatus('completed');
+            onComplete?.(data);
+            newWs.close();
+          } else if (status === 'error' || status.includes('failed')) {
+            const errorMessage = data.message || 'An error occurred during generation';
+            setError(errorMessage);
+            onError?.(errorMessage);
+            newWs.close();
+          }
         }
       } catch (err) {
         console.error('Error processing WebSocket message:', err);
-        onError?.('Error processing status update');
+        const errorMessage = 'Error processing status update';
+        setError(errorMessage);
+        onError?.(errorMessage);
       }
     };
 
@@ -114,24 +98,29 @@ export default function GenerationProgress({ id, baseUrl, onComplete, onError })
       setConnectionStatus('disconnected');
       
       if (!event.wasClean && connectionStatus !== 'completed') {
-        const errorMsg = 'Connection to generation process lost';
-        setError(errorMsg);
-        onError?.(errorMsg);
+        const errorMessage = 'Connection to generation process lost';
+        setError(errorMessage);
+        onError?.(errorMessage);
       }
     };
 
     newWs.onerror = (error) => {
       console.error('Generation WebSocket error:', error);
+      const errorMessage = 'Error connecting to generation process';
       setConnectionStatus('error');
-      const errorMsg = 'Error connecting to generation process';
-      setError(errorMsg);
-      onError?.(errorMsg);
+      setError(errorMessage);
+      onError?.(errorMessage);
     };
 
     setWs(newWs);
-  };
 
-  // Show error state
+    return () => {
+      if (newWs) {
+        newWs.close();
+      }
+    };
+  }, [id, baseUrl]);
+
   if (error) {
     return (
       <Box>

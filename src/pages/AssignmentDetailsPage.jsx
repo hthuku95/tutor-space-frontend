@@ -38,10 +38,6 @@ export default function AssignmentDetails() {
   const navigate = useNavigate();
   const BASE_URL = import.meta.env.VITE_BASE_URL;
 
-  useEffect(() => {
-    fetchAssignmentDetails();
-  }, [id]);
-
   const fetchAssignmentDetails = async () => {
     try {
       setLoading(true);
@@ -67,6 +63,10 @@ export default function AssignmentDetails() {
     }
   };
 
+  useEffect(() => {
+    fetchAssignmentDetails();
+  }, [id]);
+
   const handleStartGeneration = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -82,50 +82,31 @@ export default function AssignmentDetails() {
       );
       fetchAssignmentDetails();
     } catch (error) {
-      setError('Failed to start generation process');
+      setError('Failed to start generation process: ' + (error.response?.data?.error || error.message));
     }
   };
 
-  const getDeliveryStatus = () => {
-    if (!assignment || assignment.is_manual) return null;
+  const getTimeRemaining = (deadline) => {
+    const now = new Date();
+    const deadlineDate = new Date(deadline);
+    const diffTime = deadlineDate - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
+    if (diffDays < 0) return 'Overdue';
+    if (diffDays === 0) return 'Due today';
+    return `${diffDays} days remaining`;
+  };
+
+  const renderDeliveryStatus = () => {
+    if (!assignment || assignment.is_manual) {
+      return null;
+    }
+
     const expectedDelivery = new Date(assignment.expected_delivery_time);
     const now = new Date();
     const totalTime = new Date(assignment.completion_deadline) - new Date(assignment.timestamp);
     const timeLeft = expectedDelivery - now;
     const progress = (1 - (timeLeft / totalTime)) * 100;
-
-    return {
-      canDeliver: now >= expectedDelivery,
-      progress: Math.min(Math.max(progress, 0), 100),
-      timeLeft: Math.max(timeLeft, 0),
-      expectedDeliveryDate: expectedDelivery
-    };
-  };
-
-  const formatTimeLeft = (ms) => {
-    const days = Math.floor(ms / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((ms % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-    
-    if (days > 0) return `${days} days ${hours} hours`;
-    if (hours > 0) return `${hours} hours ${minutes} minutes`;
-    return `${minutes} minutes`;
-  };
-
-  const renderDeliveryStatus = () => {
-    // Early return if assignment is manual
-    if (!assignment || assignment.is_manual) {
-      return null;
-    }
-
-    // Only proceed if it's a platform assignment
-    if (!assignment.original_platform) {
-      return null;
-    }
-
-    const deliveryStatus = getDeliveryStatus();
-    if (!deliveryStatus) return null;
 
     return (
       <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
@@ -138,9 +119,9 @@ export default function AssignmentDetails() {
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <AccessTime sx={{ mr: 1 }} color="action" />
                 <Typography variant="body1">
-                  {deliveryStatus.canDeliver 
+                  {timeLeft <= 0 
                     ? 'Ready for delivery'
-                    : `Time until 60% mark: ${formatTimeLeft(deliveryStatus.timeLeft)}`
+                    : `Time until 60% mark: ${getTimeRemaining(expectedDelivery)}`
                   }
                 </Typography>
               </Box>
@@ -158,8 +139,8 @@ export default function AssignmentDetails() {
                     sx={{
                       height: '100%',
                       borderRadius: 5,
-                      bgcolor: deliveryStatus.canDeliver ? 'success.main' : 'primary.main',
-                      width: `${deliveryStatus.progress}%`,
+                      bgcolor: timeLeft <= 0 ? 'success.main' : 'primary.main',
+                      width: `${Math.min(Math.max(progress, 0), 100)}%`,
                       transition: 'width 0.5s ease-in-out',
                     }}
                   />
@@ -172,7 +153,7 @@ export default function AssignmentDetails() {
                   Expected Delivery:
                 </Typography>
                 <Typography variant="body1">
-                  {deliveryStatus.expectedDeliveryDate.toLocaleString()}
+                  {expectedDelivery.toLocaleString()}
                 </Typography>
               </Box>
             </Grid>
@@ -182,17 +163,21 @@ export default function AssignmentDetails() {
     );
   };
 
-  if (loading) return (
-    <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
-      <CircularProgress />
-    </Box>
-  );
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
+        <CircularProgress />
+      </Box>
+    );
+  }
 
-  if (error) return (
-    <Container maxWidth="md" sx={{ mt: 4 }}>
-      <Alert severity="error">{error}</Alert>
-    </Container>
-  );
+  if (error) {
+    return (
+      <Container maxWidth="md" sx={{ mt: 4 }}>
+        <Alert severity="error">{error}</Alert>
+      </Container>
+    );
+  }
 
   if (!assignment) return null;
 
@@ -284,7 +269,7 @@ export default function AssignmentDetails() {
           </Alert>
         )}
 
-        {/* Start Generation Button - Only show for non-manual platform assignments */}
+        {/* Start Generation Button - Only show for non-manual assignments with deposit paid */}
         {assignment.has_deposit_been_paid && 
          !assignment.completed && 
          !assignment.is_manual && 
