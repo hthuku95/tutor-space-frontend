@@ -89,13 +89,21 @@ export default function AssignmentDetails() {
 
   const shouldShowGenerationProgress = (assignment) => {
     if (!assignment) return false;
-    if (assignment.generation_status === 'not_started') return false;
-    if (assignment.generation_status === 'completed') return false;
+    if (!assignment.generation_status) return false;
     
-    return assignment.generation_status === 'in_progress' || 
-           assignment.generation_status === 'analyzing' ||
-           assignment.generation_status.includes('error') ||
-           assignment.generation_status.includes('failed');
+    const status = assignment.generation_status;
+    
+    // First check for exact matches
+    if (status === 'not_started' || status === 'completed') return false;
+    
+    // Then check for valid generation states
+    return status === 'in_progress' || 
+           status === 'analyzing' ||
+           status === 'error' ||
+           status === 'failed' ||
+           status === 'analysis_failed' ||
+           status === 'planning_failed' ||
+           status === 'implementation_failed';
   };
 
   const canStartGeneration = (assignment) => {
@@ -104,6 +112,7 @@ export default function AssignmentDetails() {
     if (!assignment.original_platform) return false;
     if (!assignment.has_deposit_been_paid) return false;
     if (assignment.completed) return false;
+    if (!assignment.generation_status) return false;
     if (assignment.generation_status !== 'not_started') return false;
     
     return true;
@@ -128,6 +137,8 @@ export default function AssignmentDetails() {
   };
 
   const getDeliveryStatus = (assignment) => {
+    if (!shouldShowDeliveryStatus(assignment)) return null;
+    
     const expectedDelivery = new Date(assignment.expected_delivery_time);
     const now = new Date();
     const totalTime = new Date(assignment.completion_deadline) - new Date(assignment.timestamp);
@@ -169,6 +180,8 @@ export default function AssignmentDetails() {
   }
 
   if (!assignment) return null;
+
+  const deliveryStatus = getDeliveryStatus(assignment);
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
@@ -244,7 +257,7 @@ export default function AssignmentDetails() {
         )}
 
         {/* Delivery Status Section */}
-        {shouldShowDeliveryStatus(assignment) && (
+        {deliveryStatus && (
           <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>
@@ -255,9 +268,9 @@ export default function AssignmentDetails() {
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                     <AccessTime sx={{ mr: 1 }} color="action" />
                     <Typography variant="body1">
-                      {getDeliveryStatus(assignment).canDeliver 
+                      {deliveryStatus.canDeliver 
                         ? 'Ready for delivery'
-                        : `Time until 60% mark: ${formatTimeLeft(getDeliveryStatus(assignment).timeLeft)}`
+                        : `Time until 60% mark: ${formatTimeLeft(deliveryStatus.timeLeft)}`
                       }
                     </Typography>
                   </Box>
@@ -275,8 +288,8 @@ export default function AssignmentDetails() {
                         sx={{
                           height: '100%',
                           borderRadius: 5,
-                          bgcolor: getDeliveryStatus(assignment).canDeliver ? 'success.main' : 'primary.main',
-                          width: `${getDeliveryStatus(assignment).progress}%`,
+                          bgcolor: deliveryStatus.canDeliver ? 'success.main' : 'primary.main',
+                          width: `${deliveryStatus.progress}%`,
                           transition: 'width 0.5s ease-in-out',
                         }}
                       />
@@ -289,7 +302,7 @@ export default function AssignmentDetails() {
                       Expected Delivery:
                     </Typography>
                     <Typography variant="body1">
-                      {getDeliveryStatus(assignment).expectedDeliveryDate.toLocaleString()}
+                      {deliveryStatus.expectedDeliveryDate.toLocaleString()}
                     </Typography>
                   </Box>
                 </Grid>
