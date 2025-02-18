@@ -25,9 +25,8 @@ import { useNavigate } from 'react-router-dom';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatIcon from '@mui/icons-material/Chat';
 import GitHubIcon from '@mui/icons-material/GitHub';
-import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import PendingActionsIcon from '@mui/icons-material/PendingActions';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import PendingActionsIcon from '@mui/icons-material/PendingActions';
 import GenerationProgress from '../components/GenerationProgress';
 
 const FILTER_OPTIONS = [
@@ -79,49 +78,43 @@ export default function AssignmentListPage() {
   }, [filter, sortBy]);
 
   const getStatusColor = (assignment) => {
+    if (!assignment) return 'default';
     if (assignment.completed) return 'success';
     if (assignment.has_revisions) return 'warning';
-    if (!assignment.has_deposit_been_paid && !assignment.is_manual) return 'error';
+    if (!assignment.is_manual && !assignment.has_deposit_been_paid) return 'error';
     if (assignment.generation_status === 'in_progress') return 'info';
     return 'default';
   };
 
-  const getTimeRemaining = (deadline) => {
-    const now = new Date();
-    const deadlineDate = new Date(deadline);
-    const diffTime = deadlineDate - now;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays < 0) return 'Overdue';
-    if (diffDays === 0) return 'Due today';
-    return `${diffDays} days remaining`;
+  const shouldShowGenerationProgress = (assignment) => {
+    if (!assignment) return false;
+    if (assignment.generation_status === 'not_started') return false;
+    if (assignment.generation_status === 'completed') return false;
+    return assignment.generation_status === 'in_progress' || 
+           assignment.generation_status === 'analyzing' ||
+           assignment.generation_status.includes('error') ||
+           assignment.generation_status.includes('failed');
   };
 
-  const renderStatusChips = (assignment) => (
-    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-      {assignment.generation_status === 'in_progress' && (
-        <Chip
-          label="Generating"
-          color="info"
-          size="small"
-        />
-      )}
-      {!assignment.is_manual && !assignment.has_deposit_been_paid && (
-        <Chip
-          label="Deposit Pending"
-          color="error"
-          size="small"
-        />
-      )}
-      {!assignment.is_manual && (
-        <Chip
-          label={getTimeRemaining(assignment.completion_deadline)}
-          color={assignment.delivery_status?.canDeliver ? 'success' : 'warning'}
-          size="small"
-        />
-      )}
-    </Box>
-  );
+  const renderPlatformInfo = (assignment) => {
+    if (!assignment) return null;
+    if (assignment.is_manual) return null;
+    if (!assignment.original_platform) return null;
+    if (!assignment.expected_delivery_time) return null;
+
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+        {!assignment.has_deposit_been_paid && (
+          <Chip
+            label="Deposit Pending"
+            color="error"
+            size="small"
+            sx={{ ml: 1 }}
+          />
+        )}
+      </Box>
+    );
+  };
 
   const renderAssignmentCard = (assignment) => (
     <Card>
@@ -152,7 +145,7 @@ export default function AssignmentListPage() {
         </Typography>
         
         {/* Generation Progress */}
-        {assignment.generation_status === 'in_progress' && (
+        {shouldShowGenerationProgress(assignment) && (
           <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
             <Typography variant="subtitle2" gutterBottom>
               Generation Progress
@@ -165,6 +158,7 @@ export default function AssignmentListPage() {
                 setError(null);
               }}
               onError={(error) => {
+                console.error('Generation error:', error);
                 setError(error);
                 fetchAssignments();
               }}
@@ -179,14 +173,9 @@ export default function AssignmentListPage() {
               <Typography variant="body2" gutterBottom>
                 <strong>Deadline:</strong> {new Date(assignment.completion_deadline).toLocaleString()}
               </Typography>
-              {!assignment.is_manual && assignment.original_platform && (
+              {assignment && !assignment.is_manual && assignment.original_platform && (
                 <Typography variant="body2" gutterBottom>
                   <strong>Platform:</strong> {assignment.original_platform.platform_name}
-                </Typography>
-              )}
-              {!assignment.is_manual && (
-                <Typography variant="body2">
-                  <strong>Expected Delivery:</strong> {new Date(assignment.expected_delivery_time).toLocaleString()}
                 </Typography>
               )}
               {assignment.github_repository && (
@@ -209,7 +198,7 @@ export default function AssignmentListPage() {
             </Box>
           </Grid>
           <Grid item xs={12} sm={6}>
-            {renderStatusChips(assignment)}
+            {renderPlatformInfo(assignment)}
           </Grid>
         </Grid>
       </CardContent>

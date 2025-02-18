@@ -15,7 +15,6 @@ import {
   Link
 } from '@mui/material';
 import {
-  AccessTime,
   Assignment,
   Chat,
   CheckCircle,
@@ -24,7 +23,8 @@ import {
   GitHub,
   PlayArrow,
   History,
-  Language
+  Language,
+  AccessTime
 } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -82,85 +82,74 @@ export default function AssignmentDetails() {
       );
       fetchAssignmentDetails();
     } catch (error) {
+      console.error('Generation start error:', error);
       setError('Failed to start generation process: ' + (error.response?.data?.error || error.message));
     }
   };
 
-  const getTimeRemaining = (deadline) => {
-    const now = new Date();
-    const deadlineDate = new Date(deadline);
-    const diffTime = deadlineDate - now;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const shouldShowGenerationProgress = (assignment) => {
+    if (!assignment) return false;
+    if (assignment.generation_status === 'not_started') return false;
+    if (assignment.generation_status === 'completed') return false;
     
-    if (diffDays < 0) return 'Overdue';
-    if (diffDays === 0) return 'Due today';
-    return `${diffDays} days remaining`;
+    return assignment.generation_status === 'in_progress' || 
+           assignment.generation_status === 'analyzing' ||
+           assignment.generation_status.includes('error') ||
+           assignment.generation_status.includes('failed');
   };
 
-  const renderDeliveryStatus = () => {
-    if (!assignment || assignment.is_manual) {
-      return null;
-    }
+  const canStartGeneration = (assignment) => {
+    if (!assignment) return false;
+    if (assignment.is_manual) return false;
+    if (!assignment.original_platform) return false;
+    if (!assignment.has_deposit_been_paid) return false;
+    if (assignment.completed) return false;
+    if (assignment.generation_status !== 'not_started') return false;
+    
+    return true;
+  };
 
+  const shouldShowDepositWarning = (assignment) => {
+    if (!assignment) return false;
+    if (assignment.is_manual) return false;
+    if (!assignment.original_platform) return false;
+    if (assignment.has_deposit_been_paid) return false;
+    
+    return true;
+  };
+
+  const shouldShowDeliveryStatus = (assignment) => {
+    if (!assignment) return false;
+    if (assignment.is_manual) return false;
+    if (!assignment.original_platform) return false;
+    if (!assignment.expected_delivery_time) return false;
+    
+    return true;
+  };
+
+  const getDeliveryStatus = (assignment) => {
     const expectedDelivery = new Date(assignment.expected_delivery_time);
     const now = new Date();
     const totalTime = new Date(assignment.completion_deadline) - new Date(assignment.timestamp);
     const timeLeft = expectedDelivery - now;
     const progress = (1 - (timeLeft / totalTime)) * 100;
 
-    return (
-      <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Delivery Status
-          </Typography>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={8}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <AccessTime sx={{ mr: 1 }} color="action" />
-                <Typography variant="body1">
-                  {timeLeft <= 0 
-                    ? 'Ready for delivery'
-                    : `Time until 60% mark: ${getTimeRemaining(expectedDelivery)}`
-                  }
-                </Typography>
-              </Box>
-              <Box sx={{ position: 'relative', pt: 1 }}>
-                <Box
-                  sx={{
-                    height: 10,
-                    borderRadius: 5,
-                    bgcolor: 'grey.300',
-                    position: 'relative',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <Box
-                    sx={{
-                      height: '100%',
-                      borderRadius: 5,
-                      bgcolor: timeLeft <= 0 ? 'success.main' : 'primary.main',
-                      width: `${Math.min(Math.max(progress, 0), 100)}%`,
-                      transition: 'width 0.5s ease-in-out',
-                    }}
-                  />
-                </Box>
-              </Box>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Box sx={{ textAlign: 'right' }}>
-                <Typography variant="body2" color="textSecondary">
-                  Expected Delivery:
-                </Typography>
-                <Typography variant="body1">
-                  {expectedDelivery.toLocaleString()}
-                </Typography>
-              </Box>
-            </Grid>
-          </Grid>
-        </CardContent>
-      </Card>
-    );
+    return {
+        canDeliver: now >= expectedDelivery,
+        progress: Math.min(Math.max(progress, 0), 100),
+        timeLeft: Math.max(timeLeft, 0),
+        expectedDeliveryDate: expectedDelivery
+    };
+  };
+
+  const formatTimeLeft = (ms) => {
+    const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((ms % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (days > 0) return `${days} days ${hours} hours`;
+    if (hours > 0) return `${hours} hours ${minutes} minutes`;
+    return `${minutes} minutes`;
   };
 
   if (loading) {
@@ -208,9 +197,9 @@ export default function AssignmentDetails() {
                   icon={<History />}
                 />
               )}
-              {!assignment.is_manual && (
+              {!assignment.is_manual && assignment.original_platform && (
                 <Chip
-                  label={assignment.original_platform?.platform_name || 'External Platform'}
+                  label={assignment.original_platform.platform_name}
                   color="info"
                   icon={<Language />}
                 />
@@ -233,7 +222,7 @@ export default function AssignmentDetails() {
         <Divider sx={{ my: 2 }} />
 
         {/* Generation Progress Section */}
-        {assignment.generation_status === 'in_progress' && (
+        {shouldShowGenerationProgress(assignment) && (
           <Paper sx={{ p: 3, mb: 3, bgcolor: 'grey.50' }}>
             <Typography variant="h6" gutterBottom>
               Generation Progress
@@ -241,14 +230,73 @@ export default function AssignmentDetails() {
             <GenerationProgress 
               id={assignment.id}
               baseUrl={BASE_URL}
-              onComplete={() => fetchAssignmentDetails()}
-              onError={(error) => setError(error)}
+              onComplete={() => {
+                fetchAssignmentDetails();
+                setError(null);
+              }}
+              onError={(error) => {
+                console.error('Generation error:', error);
+                setError(error);
+                fetchAssignmentDetails();
+              }}
             />
           </Paper>
         )}
 
-        {/* Delivery Status Section - Only for non-manual assignments */}
-        {renderDeliveryStatus()}
+        {/* Delivery Status Section */}
+        {shouldShowDeliveryStatus(assignment) && (
+          <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Delivery Status
+              </Typography>
+              <Grid container spacing={2} alignItems="center">
+                <Grid item xs={12} md={8}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <AccessTime sx={{ mr: 1 }} color="action" />
+                    <Typography variant="body1">
+                      {getDeliveryStatus(assignment).canDeliver 
+                        ? 'Ready for delivery'
+                        : `Time until 60% mark: ${formatTimeLeft(getDeliveryStatus(assignment).timeLeft)}`
+                      }
+                    </Typography>
+                  </Box>
+                  <Box sx={{ position: 'relative', pt: 1 }}>
+                    <Box
+                      sx={{
+                        height: 10,
+                        borderRadius: 5,
+                        bgcolor: 'grey.300',
+                        position: 'relative',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          height: '100%',
+                          borderRadius: 5,
+                          bgcolor: getDeliveryStatus(assignment).canDeliver ? 'success.main' : 'primary.main',
+                          width: `${getDeliveryStatus(assignment).progress}%`,
+                          transition: 'width 0.5s ease-in-out',
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="body2" color="textSecondary">
+                      Expected Delivery:
+                    </Typography>
+                    <Typography variant="body1">
+                      {getDeliveryStatus(assignment).expectedDeliveryDate.toLocaleString()}
+                    </Typography>
+                  </Box>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Description Section */}
         <Typography variant="h6" gutterBottom>
@@ -258,8 +306,8 @@ export default function AssignmentDetails() {
           {assignment.description}
         </Typography>
 
-        {/* Status Alerts */}
-        {!assignment.has_deposit_been_paid && !assignment.is_manual && (
+        {/* Platform-specific Alerts */}
+        {shouldShowDepositWarning(assignment) && (
           <Alert 
             severity="warning" 
             icon={<Warning />}
@@ -269,11 +317,8 @@ export default function AssignmentDetails() {
           </Alert>
         )}
 
-        {/* Start Generation Button - Only show for non-manual assignments with deposit paid */}
-        {assignment.has_deposit_been_paid && 
-         !assignment.completed && 
-         !assignment.is_manual && 
-         assignment.generation_status === 'not_started' && (
+        {/* Start Generation Button */}
+        {canStartGeneration(assignment) && (
           <Button
             variant="contained"
             color="primary"
