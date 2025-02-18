@@ -88,12 +88,21 @@ export default function AssignmentListPage() {
 
   const shouldShowGenerationProgress = (assignment) => {
     if (!assignment) return false;
-    if (assignment.generation_status === 'not_started') return false;
-    if (assignment.generation_status === 'completed') return false;
-    return assignment.generation_status === 'in_progress' || 
-           assignment.generation_status === 'analyzing' ||
-           assignment.generation_status.includes('error') ||
-           assignment.generation_status.includes('failed');
+    if (!assignment.generation_status) return false;
+    
+    const status = assignment.generation_status;
+    
+    // First check for exact matches
+    if (status === 'not_started' || status === 'completed') return false;
+    
+    // Then check for valid generation states
+    return status === 'in_progress' || 
+           status === 'analyzing' ||
+           status === 'error' ||
+           status === 'failed' ||
+           status === 'analysis_failed' ||
+           status === 'planning_failed' ||
+           status === 'implementation_failed';
   };
 
   const renderPlatformInfo = (assignment) => {
