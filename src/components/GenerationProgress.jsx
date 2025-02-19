@@ -22,25 +22,44 @@ const GENERATION_STEPS = [
 const getStepFromStatus = (status) => {
   switch (status) {
     case 'analyzing':
-      return 0;
+      return 0;  // Analyzing Requirements
     case 'planning':
-      return 1;
-    case 'generating':
-      return 2;
+      return 1;  // Generating Plan
+    case 'implementing':
+      return 2;  // Creating Project
     case 'reviewing':
-      return 3;
-    case 'final_review':
-      return 4;
+      return 3;  // Reviewing
+    case 'in_progress':
+      return 4;  // Final Verification
     case 'completed':
-      return 5;
+      return 5;  // Pushing to GitHub
+    case 'failed':
     case 'error':
     case 'analysis_failed':
     case 'planning_failed':
     case 'implementation_failed':
-      return -1;
+      return -1;  // Error state
     default:
       return 0;
   }
+};
+
+const getDetailedMessage = (detailedStatus, message) => {
+  const statusMessages = {
+    'initializing': 'Initializing project generation...',
+    'generating_structure': 'Generating project structure...',
+    'generating_code': 'Generating code implementation...',
+    'writing_main_document': 'Writing main document...',
+    'writing_supporting_document': 'Writing supporting documents...',
+    'setting_up_repository': 'Setting up GitHub repository...',
+    'processing_feedback': 'Processing review feedback...',
+    'feedback_implemented': 'Implementing review changes...',
+    'writing': 'Writing project content...',
+    'implementation_completed': 'Implementation completed, preparing for review...',
+    'writing_completed': 'Writing completed, preparing for review...',
+  };
+
+  return message || statusMessages[detailedStatus] || 'Processing...';
 };
 
 export default function GenerationProgress({ id, baseUrl, onComplete, onError }) {
@@ -67,29 +86,30 @@ export default function GenerationProgress({ id, baseUrl, onComplete, onError })
     newWs.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('Generation status update:', data);
-
+        
         if (data) {
-          const status = data.status || 'unknown';
-          setActiveStep(getStepFromStatus(status));
-          setMessage(data.message || 'Processing...');
+          // Use DB status for step tracking 
+          setActiveStep(getStepFromStatus(data.status));
+          
+          // Use detailed status and message for display
+          const detailedMessage = getDetailedMessage(data.detailed_status, data.message);
+          setMessage(detailedMessage);
 
-          if (status === 'completed') {
+          if (data.status === 'completed') {
             setConnectionStatus('completed');
             onComplete?.(data);
             newWs.close();
-          } else if (status === 'error' || status.includes('failed')) {
-            const errorMessage = data.message || 'An error occurred during generation';
-            setError(errorMessage);
-            onError?.(errorMessage);
+          } else if (data.status === 'failed' || data.status === 'error' || 
+                    data.status.includes('failed')) {
+            setError(data.message || 'An error occurred');
+            onError?.(data.message);
             newWs.close();
           }
         }
       } catch (err) {
         console.error('Error processing WebSocket message:', err);
-        const errorMessage = 'Error processing status update';
-        setError(errorMessage);
-        onError?.(errorMessage);
+        setError('Error processing status update');
+        onError?.('Error processing status update');
       }
     };
 

@@ -92,17 +92,8 @@ export default function AssignmentListPage() {
     
     const status = assignment.generation_status;
     
-    // First check for exact matches
-    if (status === 'not_started' || status === 'completed') return false;
-    
-    // Then check for valid generation states
-    return status === 'in_progress' || 
-           status === 'analyzing' ||
-           status === 'error' ||
-           status === 'failed' ||
-           status === 'analysis_failed' ||
-           status === 'planning_failed' ||
-           status === 'implementation_failed';
+    // Only hide for completed or not started assignments
+    return status !== 'not_started' && status !== 'completed';
   };
 
   const renderPlatformInfo = (assignment) => {
