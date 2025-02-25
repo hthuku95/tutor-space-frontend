@@ -93,8 +93,9 @@ export default function AssignmentDetails() {
     
     const status = assignment.generation_status;
     
-    // Only hide for completed or not started assignments
-    return status !== 'not_started' && status !== 'completed';
+    // Always show for in-progress states or error states
+    return status !== 'not_started' && status !== 'completed' || 
+          status === 'error' || status.includes('failed');
   };
 
   const canStartGeneration = (assignment) => {

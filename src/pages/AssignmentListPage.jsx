@@ -86,14 +86,16 @@ export default function AssignmentListPage() {
     return 'default';
   };
 
+
   const shouldShowGenerationProgress = (assignment) => {
     if (!assignment) return false;
     if (!assignment.generation_status) return false;
     
     const status = assignment.generation_status;
     
-    // Only hide for completed or not started assignments
-    return status !== 'not_started' && status !== 'completed';
+    // Always show for in-progress states or error states
+    return status !== 'not_started' && status !== 'completed' || 
+          status === 'error' || status.includes('failed');
   };
 
   const renderPlatformInfo = (assignment) => {
