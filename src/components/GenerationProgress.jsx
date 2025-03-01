@@ -1,3 +1,4 @@
+// GenerationProgress.jsx - Fixed version with safe property access
 import React, { useState, useEffect } from 'react';
 import { 
   Box, 
@@ -26,6 +27,8 @@ const GENERATION_STEPS = [
 ];
 
 const getStepFromStatus = (status) => {
+  if (!status) return 0;
+  
   switch (status) {
     case 'analyzing':
       return 0;  // Analyzing Requirements
@@ -51,6 +54,8 @@ const getStepFromStatus = (status) => {
 };
 
 const getDetailedMessage = (detailedStatus, message) => {
+  if (!detailedStatus && !message) return 'Processing...';
+  
   const statusMessages = {
     'initializing': 'Initializing project generation...',
     'generating_structure': 'Generating project structure...',
@@ -67,7 +72,12 @@ const getDetailedMessage = (detailedStatus, message) => {
     'failed': 'Generation process failed',
     'analysis_failed': 'Analysis phase failed',
     'planning_failed': 'Planning phase failed',
-    'implementation_failed': 'Implementation phase failed'
+    'implementation_failed': 'Implementation phase failed',
+    'analyzing': 'Analyzing requirements...',
+    'planning': 'Planning implementation...',
+    'implementing': 'Implementing solution...',
+    'reviewing': 'Reviewing project...',
+    'completed': 'Project completed successfully'
   };
 
   return message || statusMessages[detailedStatus] || 'Processing...';
@@ -114,23 +124,25 @@ export default function GenerationProgress({ id, baseUrl, onComplete, onError })
           console.log('WebSocket message received:', data);
           
           if (data) {
-            // Use DB status for step tracking 
-            setActiveStep(getStepFromStatus(data.status));
+            // Safely access properties with default values if needed
+            const status = data.status || 'unknown';
+            const detailedStatus = data.detailed_status || status;
+            const displayMessage = data.message || getDetailedMessage(detailedStatus, null);
             
-            // Use detailed status and message for display
-            const detailedMessage = getDetailedMessage(data.detailed_status, data.message);
-            setMessage(detailedMessage);
+            // Update step and message
+            setActiveStep(getStepFromStatus(status));
+            setMessage(displayMessage);
 
-            // Check for errors
-            if (data.status === 'error' || 
-                data.status === 'failed' || 
-                data.status.includes('failed')) {
-              setError(detailedMessage || 'Generation process failed');
-              setErrorDetails(data.error_details || data.detailed_status || null);
-              onError?.(data.message || 'Generation process failed');
+            // Check for errors - safely check if status is a string before using includes
+            if (status === 'error' || 
+                status === 'failed' || 
+                (typeof status === 'string' && status.includes && status.includes('failed'))) {
+              setError(displayMessage || 'Generation process failed');
+              setErrorDetails(data.error_details || detailedStatus || null);
+              onError?.(displayMessage || 'Generation process failed');
             } 
             // Check for completion
-            else if (data.status === 'completed') {
+            else if (status === 'completed') {
               setConnectionStatus('completed');
               onComplete?.(data);
               newWs.close();
