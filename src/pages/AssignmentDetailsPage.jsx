@@ -36,7 +36,7 @@ export default function AssignmentDetails() {
   const [error, setError] = useState(null);
   const { id } = useParams();
   const navigate = useNavigate();
-  const BASE_URL = import.meta.env.VITE_BASE_URL;
+  const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   const fetchAssignmentDetails = async () => {
     try {
@@ -71,7 +71,7 @@ export default function AssignmentDetails() {
     try {
       const token = localStorage.getItem('token');
       await axios.post(
-        `${BASE_URL}/api/agents/assignments/${id}/process/`,
+        `${import.meta.env.VITE_API_BASE_URL}/api/agents/assignments/${id}/process/`,
         {},
         {
           headers: {
